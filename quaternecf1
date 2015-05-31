@@ -1,3 +1,4 @@
+
 /*Gyro output rate: 8kHz (if we do'nt use DLPF and 1kHz if do use DLPF)
 **Accelo output rate: 1kHz*/
 
@@ -51,18 +52,25 @@ float previousEy = 0.0;
 float previousEz = 0.0;
 float Angle[3];
 float currentTime;
-float previousTime;
+float previousTime=0.0;
 float diff;
-int16_t ax;
-int16_t ay;
-int16_t az;
-int16_t wx;
-int16_t wy;
-int16_t wz;
+float ax;
+float ay;
+float az;
+float wx;
+float wy;
+float wz;
+float temperature;
 
 #define XAXIS 0
 #define YAXIS 1
 #define ZAXIS 2
+
+boolean changedSign(float a,float b){
+  if ((a>0&&b<0)||(a<0&&b>0)) return true;
+  else return false;
+  
+}
 
 void quaternionECF() {
   
@@ -91,8 +99,16 @@ void quaternionECF() {
     
   // STEP 3 integral error scaled integral gain
   exInt = exInt + ex*Ki;
+  if (changedSign(previousEx,ex)) exInt=0.0;
+  previousEx=ex;
+  
   eyInt = eyInt + ey*Ki;
+  if (changedSign(previousEy,ey)) eyInt=0.0;
+  previousEy=ey;
+  
   ezInt = ezInt + ez*Ki;
+  if (changedSign(previousEz,ez)) ezInt=0.0;
+  previousEz=ez;
  
   // STEP 4 adjust gyroscope measurements
   wx = wx + Kp*ex + exInt;
@@ -149,10 +165,6 @@ void calculateKinematics() {
   eulerAngles();
 }
 
-int16_t gyroRaw[3];
-int16_t accelRaw[3];
-int16_t temperature;
-
 void initI2CMPU(void) //Begins I2C communication with  MPU using it's internal 8MHz oscillator for CLKSEL and also wakes up the MPU.
 {
   Wire.begin();
@@ -192,11 +204,26 @@ void getMPUValues(void)
     wy = (Wire.read() << 8) | Wire.read();
     wz = (Wire.read() << 8) | Wire.read();
   }
+  
+  ax=ax/16384;
+  ay=ay/16384;
+  az=az/16384;
+  
+  wx=wx/131;
+  wy=wy/131;
+  wz=wz/131;
 
 }
 
 void printMPUangles(void)
 {
+  
+  
+   
+  Serial.print(ax); Serial.print('\t');
+  Serial.print(ay);Serial.print('\t');
+  Serial.print(az); Serial.print('\t');
+  
   Serial.print(Angle[XAXIS]); Serial.print('\t');
   Serial.print(Angle[YAXIS]);Serial.print('\t');
   Serial.print(Angle[ZAXIS]); Serial.print('\n');
@@ -215,10 +242,10 @@ void loop()
 {
   getMPUValues();
   
-  currentTime=millis()/1000; 
+  currentTime=millis()/1000.0; 
   diff=currentTime-previousTime;
   previousTime=currentTime;
+  
   calculateKinematics(); 
   printMPUangles();
 }
-
