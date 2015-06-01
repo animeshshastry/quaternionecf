@@ -116,10 +116,10 @@ void quaternionECF() {
   wz = wz + Kp*ez + ezInt;
     
   // integrate quaternion rate and normalise
-  q0i = (-q1*gx - q2*gy - q3*gz) * halfT;
-  q1i = ( q0*gx + q2*gz - q3*gy) * halfT;
-  q2i = ( q0*gy - q1*gz + q3*gx) * halfT;
-  q3i = ( q0*gz + q1*gy - q2*gx) * halfT;
+  q0i = (-q1*wx - q2*wy - q3*wz) * halfT;
+  q1i = ( q0*wx + q2*wz - q3*wy) * halfT;
+  q2i = ( q0*wy - q1*wz + q3*wx) * halfT;
+  q3i = ( q0*wz + q1*wy - q2*wx) * halfT;
   q0 += q0i;
   q1 += q1i;
   q2 += q2i;
