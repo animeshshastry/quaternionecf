@@ -143,6 +143,10 @@ void eulerAngles()
 
 void initializeKinematics() 
 {
+
+  Angle[XAXIS]=0.0;
+  Angle[YAXIS]=0.0;
+  Angle[ZAXIS]=0.0;
   q0 = 1.0;
   q1 = 0.0;
   q2 = 0.0;
