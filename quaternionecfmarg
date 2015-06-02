@@ -102,14 +102,16 @@ void quaternionECF() {
   my = my / norm;
   mz = mz / norm;
   
-  
+  //direction of field in earth frame [H]e=[R]*[m]b
   hx = mx * 2*(0.5 - q2*q2 - q3*q3) + my * 2*(q1*q2 - q0*q3)       + mz * 2*(q1*q3 + q0*q2);
   hy = mx * 2*(q1*q2 + q0*q3)       + my * 2*(0.5 - q1*q1 - q3*q3) + mz * 2*(q2*q3 - q0*q1);
   hz = mx * 2*(q1*q3 - q0*q2)       + my * 2*(q2*q3 + q0*q1)       + mz * 2*(0.5 - q1*q1 - q2*q2);
-    
+  
+  //a liitle change of co-ordinates in earth frame  
   cx = sqrt((hx*hx) + (hy*hy));
   cz = hz;           	
      
+  //back to the body frame [b]b=[R]t*[c]e (so that the co-ordinates in the body frame know the direction of North)
   bx = cx * 2*(0.5 - q2*q2 - q3*q3) + cz * 2*(q1*q3 - q0*q2);
   by = cx * 2*(q1*q2 - q0*q3)       + cz * 2*(q0*q1 + q2*q3);
   bz = cx * 2*(q0*q2 + q1*q3)       + cz * 2*(0.5 - q1*q1 - q2*q2);
