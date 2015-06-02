@@ -161,7 +161,7 @@ void initializeKinematics()
   previousEy = 0;
   previousEz = 0;
 
-  Kp = 0.2;
+  Kp = 2.2;
   Ki = 0.0005;
 }
 
@@ -229,6 +229,10 @@ void printMPUangles(void)
   Serial.print(ax); Serial.print('\t');
   Serial.print(ay);Serial.print('\t');
   Serial.print(az); Serial.print('\t');
+  
+  Serial.print(wx); Serial.print('\t');
+  Serial.print(wy);Serial.print('\t');
+  Serial.print(wz); Serial.print('\t');
   
   Serial.print(Angle[XAXIS]-offset[XAXIS]); Serial.print('\t');
   Serial.print(Angle[YAXIS]-offset[YAXIS]);Serial.print('\t');
