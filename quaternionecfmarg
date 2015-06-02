@@ -154,10 +154,10 @@ void quaternionECF() {
   q1i = ( q0*wx + q2*wz - q3*wy) * halfT;
   q2i = ( q0*wy - q1*wz + q3*wx) * halfT;
   q3i = ( q0*wz + q1*wy - q2*wx) * halfT;
-  q0 += q0i;
-  q1 += q1i;
-  q2 += q2i;
-  q3 += q3i;
+  q0 =q0+ q0i;
+  q1 =q1+ q1i;
+  q2 =q2+ q2i;
+  q3 =q3+ q3i;
     
   // normalise quaternion
   norm = sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
@@ -193,10 +193,10 @@ void initializeKinematics()
   previousEy = 0;
   previousEz = 0;
 
-  KpAcc = 0.2;
+  KpAcc = 2.2;
   KiAcc = 0.0005;
   
-  KpMag = 0.2;
+  KpMag = 2.2;
   KiMag = 0.0005;
 }
 
