@@ -19,6 +19,8 @@
 
 #define HMC5883_ADDRESS 0x1E
 #define MODE_ADDRESS 0x02
+#define MAGNET_SCALING_FACTOR 1
+
 
 /*The below register addresses are for the configuration bits of the gyrometer and accelometer ranges*/
 #define GYRO_CONFIG_REGISTER 0x1B
@@ -79,6 +81,11 @@ int16_t accz;
 int16_t wwx;
 int16_t wwy;
 int16_t wwz;
+
+int16_t mmx;
+int16_t mmy;
+int16_t mmz:
+
 
 #define XAXIS 0
 #define YAXIS 1
@@ -288,10 +295,14 @@ void getMagnetValues(void)
    Wire.endTransmission(false);
    Wire.requestFrom(HMC5883_ADDRESS,6,true);
    
-   mx=Wire.read()<<8|Wire.read();
-   my=(Wire.read()<<8|Wire.read())*-1;
-   mz=(Wire.read()<<8|Wire.read())*-1;
+   mmx=Wire.read()<<8|Wire.read();
+   mmy=(Wire.read()<<8|Wire.read())*-1;
+   mmz=(Wire.read()<<8|Wire.read())*-1;
    
+   mx= mmx/MAGNET_SCALING_FACTOR;
+   my= mmy/MAGNET_SCALING_FACTOR;
+   mz= mmz/MAGNET_SCALING_FACTOR;
+
 }
 
 
