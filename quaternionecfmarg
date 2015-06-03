@@ -261,15 +261,15 @@ void getMPUValues(void)
 
   if (Wire.available())
   {
-    ax = (Wire.read() << 8) | Wire.read();
-    ay = (Wire.read() << 8) | Wire.read();
-    az = (Wire.read() << 8) | Wire.read();
+    accx = (Wire.read() << 8) | Wire.read();
+    accy = (Wire.read() << 8) | Wire.read();
+    accz = (Wire.read() << 8) | Wire.read();
 
     temperature = (Wire.read() << 8) | Wire.read();
 
-    wx = (Wire.read() << 8) | Wire.read();
-    wy = (Wire.read() << 8) | Wire.read();
-    wz = (Wire.read() << 8) | Wire.read();
+    wwx = (Wire.read() << 8) | Wire.read();
+    wwy = (Wire.read() << 8) | Wire.read();
+    wwz = (Wire.read() << 8) | Wire.read();
   }
   
    ax=(float)accx/16384;
