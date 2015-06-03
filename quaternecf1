@@ -61,8 +61,18 @@ float wx;
 float wy;
 float wz;
 float temperature;
-
+float gyroOffsetx=0.0;
+float gyroOffsety=0.0;
+float gyroOffsetz=0.0;
 float offset[3];
+
+int16_t accx;
+int16_t accy;
+int16_t accz;
+
+int16_t wwx;
+int16_t wwy;
+int16_t wwz;
 
 #define XAXIS 0
 #define YAXIS 1
@@ -122,10 +132,10 @@ void quaternionECF() {
   q1i = ( q0*wx + q2*wz - q3*wy) * halfT;
   q2i = ( q0*wy - q1*wz + q3*wx) * halfT;
   q3i = ( q0*wz + q1*wy - q2*wx) * halfT;
-  q0 += q0i;
-  q1 += q1i;
-  q2 += q2i;
-  q3 += q3i;
+  q0 =q0+ q0i;
+  q1 =q1+ q1i;
+  q2 =q2+ q2i;
+  q3 =q3+ q3i;
     
   // normalise quaternion
   norm = sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
@@ -137,15 +147,21 @@ void quaternionECF() {
   
 void eulerAngles()
 {
-  Angle[XAXIS]  = atan2(2 * (q0*q1 + q2*q3), 1 - 2 *(q1*q1 + q2*q2));
-  Angle[YAXIS] = asin(2 * (q0*q2 - q1*q3));
-  Angle[ZAXIS]   = atan2(2 * (q0*q3 + q1*q2), 1 - 2 *(q2*q2 + q3*q3));
+  Angle[XAXIS]  =(180/3.14)*atan2(2 * (q0*q1 + q2*q3), 1 - 2 *(q1*q1 + q2*q2));
+  if (Angle[XAXIS]<0) Angle[XAXIS]=Angle[XAXIS]+180;
+  else Angle[XAXIS]=Angle[XAXIS]-180;
+  
+  Angle[YAXIS] = -(180/3.14)*asin(2 * (q0*q2 - q1*q3));
+  Angle[ZAXIS]   = (180/3.14)*atan2(2 * (q0*q3 + q1*q2), 1 - 2 *(q2*q2 + q3*q3));
 }
 
 
 void initializeKinematics() 
 {
-
+  
+  offset[XAXIS]=0.0;
+  offset[YAXIS]=0.0;
+  offset[ZAXIS]=0.0;
   Angle[XAXIS]=0.0;
   Angle[YAXIS]=0.0;
   Angle[ZAXIS]=0.0;
@@ -161,8 +177,8 @@ void initializeKinematics()
   previousEy = 0;
   previousEz = 0;
 
-  Kp = 2.2;
-  Ki = 0.0005;
+  Kp = 32.3;
+  Ki = 12.00;
 }
 
 void calculateKinematics() {
@@ -200,24 +216,24 @@ void getMPUValues(void)
 
   if (Wire.available())
   {
-    ax = (Wire.read() << 8) | Wire.read();
-    ay = (Wire.read() << 8) | Wire.read();
-    az = (Wire.read() << 8) | Wire.read();
+    accx = (Wire.read() << 8) | Wire.read();
+    accy = (Wire.read() << 8) | Wire.read();
+    accz = (Wire.read() << 8) | Wire.read();
 
     temperature = (Wire.read() << 8) | Wire.read();
 
-    wx = (Wire.read() << 8) | Wire.read();
-    wy = (Wire.read() << 8) | Wire.read();
-    wz = (Wire.read() << 8) | Wire.read();
+    wwx = (Wire.read() << 8) | Wire.read();
+    wwy = (Wire.read() << 8) | Wire.read();
+    wwz = (Wire.read() << 8) | Wire.read();
   }
   
-  ax=ax/16384;
-  ay=ay/16384;
-  az=az/16384;
+  ax=(float)accx/16384;
+  ay=(float)accy/16384;
+  az=(float)accz/16384;
   
-  wx=wx/131;
-  wy=wy/131;
-  wz=wz/131;
+  wx=(wwx/131)*(3.14/180);
+  wy=(wwy/131)*(3.14/180);
+  wz=(wwz/131)*(3.14/180);
 
 }
 
@@ -233,7 +249,10 @@ void printMPUangles(void)
   Serial.print(wx); Serial.print('\t');
   Serial.print(wy);Serial.print('\t');
   Serial.print(wz); Serial.print('\t');
-  
+  Serial.print('\t');
+  Serial.print(diff);
+  Serial.print('\t');
+  Serial.print('\t');
   Serial.print(Angle[XAXIS]-offset[XAXIS]); Serial.print('\t');
   Serial.print(Angle[YAXIS]-offset[YAXIS]);Serial.print('\t');
   Serial.print(Angle[ZAXIS]-offset[ZAXIS]); Serial.print('\n');
@@ -243,8 +262,20 @@ void printMPUangles(void)
 }
 
 void calculateOffset(){
+  Serial.println("Calculating offset");
+  int i;
   
-  for (int i=0;i<1000;i++)
+  for (i=0;i<100;i=i+1)
+  {
+    getMPUValues();
+  
+    currentTime=millis()/1000.0; 
+    diff=currentTime-previousTime;
+    previousTime=currentTime;
+  
+    calculateKinematics(); 
+  }
+  for (i=0;i<100;i=i+1)
   {
     getMPUValues();
   
@@ -260,28 +291,33 @@ void calculateOffset(){
     
   }
   
-  offset[XAXIS]=offset[XAXIS]/1000;
-  offset[YAXIS]=offset[YAXIS]/1000;
-  offset[ZAXIS]=offset[ZAXIS]/1000;
+  offset[XAXIS]=offset[XAXIS]/100;
+  offset[YAXIS]=offset[YAXIS]/100;
+  offset[ZAXIS]=offset[ZAXIS]/100;
+  Serial.println("Offset calculated");
 }
 
 void setup(){
-  Serial.begin(9600);
+  Serial.begin(115200);
   initI2CMPU();
   
   initializeKinematics();
-  
-  calculateOffset();
+  //getMPUValues();
+  //gyroOffsetx=wx;
+  //gyroOffsety=wy;
+  //gyroOffsetz=wz;
+  //calculateOffset();
 }
 
 void loop()
 {
   getMPUValues();
-  
   currentTime=millis()/1000.0; 
   diff=currentTime-previousTime;
-  previousTime=currentTime;
   
+  if(diff>0.01){
+  previousTime=currentTime;
   calculateKinematics(); 
   printMPUangles();
+  }
 }
