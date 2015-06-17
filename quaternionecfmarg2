@@ -1,0 +1,449 @@
+
+/*Gyro output rate: 8kHz (if we do'nt use DLPF and 1kHz if do use DLPF)
+**Accelo output rate: 1kHz*/
+
+/*All of the below regiater addresses are for the most significant bits, i.e. for bits[15:8]*/
+
+#include <Wire.h>
+
+#define GYRO_XOUT_REGISTER  0x43
+#define GYRO_YOUT_REGISTER  0x45
+#define GYRO_ZOUT_REGISTER  0x47
+
+#define ACCELO_XOUT_REGISTER 0x3B
+#define ACCELO_YOUT_REGISTER 0x3D
+#define ACCELO_ZOUT_REGISTER 0x3F
+
+#define TEMP_OUT_REGISTER 0x41
+
+
+#define HMC5883_ADDRESS 0x1E
+#define MODE_ADDRESS 0x02
+#define MAGNET_SCALING_FACTOR 1
+
+
+/*The below register addresses are for the configuration bits of the gyrometer and accelometer ranges*/
+#define GYRO_CONFIG_REGISTER 0x1B
+#define FS_SEL_BIT 3//0-> +-250 deg/s 1-> +-500 deg/s 0-> +-1000 deg/s 0-> +-2000 deg/s
+
+#define ACCEL0_CONFIG_REGISTER 0x1C
+#define AFS_SEL_BIT 3//0-> +-2g 1-> +-4g 0-> +-8g 0-> +-16g
+
+/*One of the power registers.  Contains the Sleep mode bit. The sleep mode bit should be set to 0 for sleep mode to be deactivated.*/
+#define PWR_MGMT_1_REGISTER 0x6B
+
+#define MPU_ADDRESS 0x68 // Can be made 0x69 as well using the AD0 pin of the IMU.
+
+#define CONFIG_REGISTER 0x1A //The register containing the DLPF bits.
+
+#define CONFIG_VALUE  4  //0->260Hz  1->184Hz  2->94Hz  3->44Hz  4->21Hz  5->260Hz  6->10Hz  7->5Hz
+//It is should be noted that decreasing the bandwidth increases the delay.
+/*The dividing factors. They change with different modes of operation of the gyro and accelerometer*/
+#define ACCELO_DIVIDING_FACTOR 16384//2g->16384  4g->8192  8g->4096  16g->2048
+#define GYRO_DIVIDING_FACTOR 131  //250dps->131  500dps->65.5  1000dps->32.8  2000dps->16.4 
+
+/*For temperature sensor*/
+#define TEMP_DIVIDING_FACTOR 340
+#define TEMP_OFFSET  36.53
+
+
+#define M1 1.096547
+#define M2 -0.017542
+#define M3 -0.005483
+#define M4 -0.0175421
+#define M5 1.084696
+#define M6 -0.030403
+#define M7 -0.005483
+#define M8 -0.030403
+#define M9 1.155178
+#define B1 34.082902
+#define B2 123.023306
+#define B3 2.159130
+
+
+float KpAcc = 0.0;                   				
+float KiAcc = 0.0;   
+float KpMag = 0.0;                   				
+float KiMag = 0.0;  
+					
+float halfT = 0.0;                					
+float q0 = 0.0, q1 = 0.0, q2 = 0.0, q3 = 0.0;      
+float exInt = 0.0, eyInt = 0.0, ezInt = 0.0;  		
+
+float previousExAcc = 0.0;
+float previousEyAcc = 0.0;
+float previousEzAcc = 0.0;
+
+float previousExMag = 0.0;
+float previousEyMag = 0.0;
+float previousEzMag = 0.0;
+
+float magnetVal[3];
+float Angle[3];
+float offset[3];
+
+float currentTime;
+float previousTime=0.0;
+float diff;
+float ax;
+float ay;
+float az;
+float wx;
+float wy;
+float wz;
+float mx;
+float my;
+float mz;
+float temperature;
+
+float exAcc, eyAcc, ezAcc;
+float exMag, eyMag, ezMag;
+
+int16_t accx;
+int16_t accy;
+int16_t accz;
+
+int16_t wwx;
+int16_t wwy;
+int16_t wwz;
+
+int16_t mmx;
+int16_t mmy;
+int16_t mmz;
+
+
+#define XAXIS 0
+#define YAXIS 1
+#define ZAXIS 2
+
+
+
+
+
+void calibrateMagnetometer(){
+     magnetVal[XAXIS]=M1*(mx-B1)+M2*(my-B2)+M3*(mz-B3);
+     magnetVal[YAXIS]=M4*(mx-B1)+M5*(my-B2)+M6*(mz-B3);
+     magnetVal[ZAXIS]=M7*(mx-B1)+M8*(my-B2)+M9*(mz-B3);
+     
+     mx=magnetVal[XAXIS];
+     my=magnetVal[YAXIS];
+     mz=magnetVal[ZAXIS];
+     
+}
+boolean changedSign(float a,float b){
+  if ((a>0&&b<0)||(a<0&&b>0)) return true;
+  else return false;
+  
+}
+
+void quaternionECF() {
+  float norm;
+  float hx, hy, hz, cx, cz;
+  float gx, gy, gz, bx, by, bz;
+  float q0i, q1i, q2i, q3i;
+  
+  halfT = diff/2;
+  
+  // normalise the measurements
+  norm = sqrt(ax*ax + ay*ay + az*az);       
+  ax = ax / norm;
+  ay = ay / norm;
+  az = az / norm;
+  norm = sqrt(mx*mx + my*my + mz*mz);       
+  mx = mx / norm;
+  my = my / norm;
+  mz = mz / norm;
+  
+  //direction of field in earth frame [H]e=[R]*[m]b
+  hx = mx * 2*(0.5 - q2*q2 - q3*q3) + my * 2*(q1*q2 - q0*q3)       + mz * 2*(q1*q3 + q0*q2);
+  hy = mx * 2*(q1*q2 + q0*q3)       + my * 2*(0.5 - q1*q1 - q3*q3) + mz * 2*(q2*q3 - q0*q1);
+  hz = mx * 2*(q1*q3 - q0*q2)       + my * 2*(q2*q3 + q0*q1)       + mz * 2*(0.5 - q1*q1 - q2*q2);
+  
+  //a liitle change of co-ordinates in earth frame  
+  cx = sqrt((hx*hx) + (hy*hy));//magnetic field in north direction
+  cz = hz;           	
+  /*   
+  cx=35,514;
+  cz=31,147;
+
+  norm=sqrt(cx*cx+cz*cz);
+  cx=cx/norm;
+  cz=cz/norm;
+  */
+  //back to the body frame [b]b=[R]t*[c]e (so that the co-ordinates in the body frame know the direction of North)
+  bx = cx * 2*(0.5 - q2*q2 - q3*q3) + cz * 2*(q1*q3 - q0*q2);
+  by = cx * 2*(q1*q2 - q0*q3)       + cz * 2*(q0*q1 + q2*q3);
+  bz = cx * 2*(q0*q2 + q1*q3)       + cz * 2*(0.5 - q1*q1 - q2*q2);
+    	
+     
+  // STEP 1 estimated direction of gravity [G]b=[R]t*[G]e;
+  gx = 2*(q1*q3 - q0*q2);
+  gy = 2*(q0*q1 + q2*q3);
+  gz = q0*q0 - q1*q1 - q2*q2 + q3*q3;
+    
+  // STEP 2 error is sum of cross product between reference direction of fields and direction measured by sensors
+  exAcc = (gy*az - gz*ay);
+  eyAcc = (gz*ax - gx*az);
+  ezAcc = (gx*ay - gy*ax);
+  
+  exMag = (my*bz - mz*by);
+  eyMag = (mz*bx - mx*bz);
+  ezMag = (mx*by - my*bx);
+    
+  // STEP 3 integral error scaled integral gain
+  exInt = exInt + exAcc*KiAcc + exMag*KiMag;
+  if (changedSign(previousExAcc,exAcc)) exInt=0.0;
+  previousExAcc=exAcc;
+  if (changedSign(previousExMag,exMag)) exInt=0.0;
+  previousExMag=exMag;
+  
+  eyInt = eyInt + eyAcc*KiAcc + eyMag*KiMag;
+  if (changedSign(previousEyAcc,eyAcc)) eyInt=0.0;
+  previousEyAcc=eyAcc;
+  if (changedSign(previousEyMag,eyMag)) eyInt=0.0;
+  previousEyMag=eyMag;
+  
+  ezInt = ezInt + ezAcc*KiAcc + ezMag*KiMag;
+  if (changedSign(previousEzAcc,ezAcc)) ezInt=0.0;
+  previousEzAcc=ezAcc;
+  if (changedSign(previousEzMag,ezMag)) ezInt=0.0;
+  previousEzMag=ezMag;
+ 
+  // STEP 4 adjust gyroscope measurements
+  wx = wx + KpAcc*exAcc + KpMag*ezMag + exInt;
+  wy = wy + KpAcc*eyAcc + KpMag*ezMag + eyInt;
+  wz = wz + KpAcc*ezAcc + KpMag*ezMag + ezInt;
+    
+  // integrate quaternion rate and normalise
+  q0i = (-q1*wx - q2*wy - q3*wz) * halfT;
+  q1i = ( q0*wx + q2*wz - q3*wy) * halfT;
+  q2i = ( q0*wy - q1*wz + q3*wx) * halfT;
+  q3i = ( q0*wz + q1*wy - q2*wx) * halfT;
+  q0 =q0+ q0i;
+  q1 =q1+ q1i;
+  q2 =q2+ q2i;
+  q3 =q3+ q3i;
+    
+  // normalise quaternion
+  norm = sqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
+  q0 = q0 / norm;
+  q1 = q1 / norm;
+  q2 = q2 / norm;
+  q3 = q3 / norm;
+}
+  
+void eulerAngles()
+{
+   Angle[XAXIS]  =(180/3.14)*atan2(2 * (q0*q1 + q2*q3), 1 - 2 *(q1*q1 + q2*q2));
+  if (Angle[XAXIS]<0) Angle[XAXIS]=Angle[XAXIS]+180;
+  else Angle[XAXIS]=Angle[XAXIS]-180;
+  
+  Angle[YAXIS] = -(180/3.14)*asin(2 * (q0*q2 - q1*q3));
+  Angle[ZAXIS]   = (180/3.14)*atan2(2 * (q0*q3 + q1*q2), 1 - 2 *(q2*q2 + q3*q3));
+  //if (Angle[ZAXIS]<0) Angle[ZAXIS]=Angle[ZAXIS]+180;
+  //else Angle[ZAXIS]=Angle[ZAXIS]-180;
+  
+}
+
+
+void initializeKinematics() 
+{
+
+  Angle[XAXIS]=0.0;
+  Angle[YAXIS]=0.0;
+  Angle[ZAXIS]=0.0;
+  offset[XAXIS]=0.0;
+  offset[YAXIS]=0.0;
+  offset[ZAXIS]=0.0;
+  magnetVal[XAXIS]=0.0;
+  magnetVal[YAXIS]=0.0;
+  magnetVal[ZAXIS]=0.0;
+  q0 = 1.0;
+  q1 = 0.0;
+  q2 = 0.0;
+  q3 = 0.0;
+  exInt = 0.0;
+  eyInt = 0.0;
+  ezInt = 0.0;
+	
+  previousExAcc = 0;
+  previousEyAcc = 0;
+  previousEzAcc = 0;
+  	
+  previousExMag = 0;
+  previousEyMag = 0;
+  previousEzMag = 0;
+
+  KpAcc =0.0;
+  KiAcc = 0.000;
+  
+  KpMag = 20.0;
+  KiMag = 0.000;
+}
+
+void calculateKinematics() {
+    
+  quaternionECF();
+  eulerAngles();
+}
+
+void initI2CMPU(void) //Begins I2C communication with  MPU using it's internal 8MHz oscillator for CLKSEL and also wakes up the MPU.
+{
+  Wire.begin();
+
+  Wire.beginTransmission(MPU_ADDRESS);
+
+  Wire.write(PWR_MGMT_1_REGISTER);
+  Wire.write(0);
+
+  Wire.endTransmission(true);
+  Wire.beginTransmission(MPU_ADDRESS);
+
+  Wire.write(CONFIG_REGISTER);
+  Wire.write(CONFIG_VALUE);
+
+  Wire.endTransmission(true);
+
+}
+
+void initMagnet(void)
+{
+  Wire.begin();
+  
+  Wire.beginTransmission(HMC5883_ADDRESS);
+  Wire.write(MODE_ADDRESS);
+  Wire.write(0x00);//continuous mode enable
+  Wire.endTransmission(true);
+  
+  Wire.beginTransmission(HMC5883_ADDRESS);
+  Wire.write(0x01);
+  Wire.write(0x20);//setting range to +/- 1.3 gauss.
+  Wire.endTransmission(true);  
+}
+
+void getMPUValues(void)
+{
+  Wire.beginTransmission(MPU_ADDRESS);
+  Wire.write(ACCELO_XOUT_REGISTER);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(MPU_ADDRESS, 14, true);
+
+  if (Wire.available())
+  {
+    accx = (Wire.read() << 8) | Wire.read();
+    accy = (Wire.read() << 8) | Wire.read();
+    accz = (Wire.read() << 8) | Wire.read();
+
+    temperature = (Wire.read() << 8) | Wire.read();
+
+    wwx = (Wire.read() << 8) | Wire.read();
+    wwy = (Wire.read() << 8) | Wire.read();
+    wwz = (Wire.read() << 8) | Wire.read();
+  }
+  
+   ax=(float)accx/16384;
+  ay=(float)accy/16384;
+  az=(float)accz/16384;
+  
+  wx=(wwx/131)*(3.14/180);
+  wy=(wwy/131)*(3.14/180);
+  wz=(wwz/131)*(3.14/180);
+
+}
+void getMagnetValues(void)
+{
+   Wire.beginTransmission(HMC5883_ADDRESS);
+   Wire.write(0x03);
+   Wire.endTransmission(false);
+   Wire.requestFrom(HMC5883_ADDRESS,6,true);
+   
+   mx=Wire.read()<<8|Wire.read();
+   my=(Wire.read()<<8|Wire.read())*-1;
+   mz=(Wire.read()<<8|Wire.read())*-1;
+   
+   //mx= (float)mmx/MAGNET_SCALING_FACTOR;
+   //my= (float)mmy/MAGNET_SCALING_FACTOR;
+   //mz= (float)mmz/MAGNET_SCALING_FACTOR;
+
+}
+
+
+void printangles(void)
+{
+  
+  Serial.print(Angle[XAXIS]-offset[XAXIS]); Serial.print('\t');
+  Serial.print(Angle[YAXIS]-offset[YAXIS]);Serial.print('\t');
+  Serial.print(Angle[ZAXIS]-offset[ZAXIS]); Serial.print('\t');
+   
+  Serial.print(mx); Serial.print('\t');
+  Serial.print(my);Serial.print('\t');
+  Serial.print(mz); Serial.print('\t');
+  
+  Serial.print('\n');
+ 
+}
+
+
+void calculateOffset(){
+  Serial.println("Calculating offset");
+  int i;
+  
+  for (i=0;i<100;i=i+1)
+  {
+    getMPUValues();
+    getMagnetValues();
+  
+    currentTime=millis()/1000.0; 
+    diff=currentTime-previousTime;
+    previousTime=currentTime;
+  
+    calculateKinematics(); 
+    delay(10);
+  }
+  for (i=0;i<100;i=i+1)
+  {
+    getMPUValues();
+    getMagnetValues();
+  
+    currentTime=millis()/1000.0; 
+    diff=currentTime-previousTime;
+    previousTime=currentTime;
+  
+    calculateKinematics();
+   
+    offset[XAXIS]=offset[XAXIS] + Angle[XAXIS]; 
+    offset[YAXIS]=offset[YAXIS] + Angle[YAXIS]; 
+    offset[ZAXIS]=offset[ZAXIS] + Angle[ZAXIS]; 
+    delay(10);
+  }
+  
+  offset[XAXIS]=offset[XAXIS]/100;
+  offset[YAXIS]=offset[YAXIS]/100;
+  offset[ZAXIS]=offset[ZAXIS]/100;
+  Serial.println("Offset calculated");
+}
+
+void setup(){
+  Serial.begin(9600);
+  initI2CMPU();
+  initMagnet();
+  initializeKinematics();
+  //calculateOffset();
+}
+
+void loop()
+{
+  getMPUValues();
+  getMagnetValues();
+  calibrateMagnetometer();
+  
+  currentTime=millis()/1000.0; 
+  diff=currentTime-previousTime;
+   
+  if(diff>0.01){
+  previousTime=currentTime;
+  calculateKinematics(); 
+  printangles();
+}
+}
